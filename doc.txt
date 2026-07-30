@@ -37,3 +37,363 @@ flowchart TD
 The key insight: FAISS handles the fast similarity search, MongoDB stores the readable text — they're linked by `vector_id`.
 
 
+                  PDF
+                   |
+                   ▼
+           Extract Text
+                   |
+                   ▼
+            Split into Chunks
+                   |
+                   ▼
+      Sentence Transformer (Embedding Model)
+                   |
+        Embedding Vector (768 numbers)
+                   |
+        +----------+----------+
+        |                     |
+        ▼                     ▼
+     MongoDB               FAISS
+ (stores text)        (search vectors)
+        |                     |
+        +----------+----------+
+                   |
+                   ▼
+          User asks question
+                   |
+                   ▼
+      Sentence Transformer
+        (Question Embedding)
+                   |
+                   ▼
+               FAISS Search
+                   |
+                   ▼
+      Top matching document chunks
+                   |
+                   ▼
+                Ollama
+                (LLM)
+                   |
+                   ▼
+              Final Answer
+
+
+1. MongoDB
+
+Think of MongoDB as a filing cabinet.
+
+Its job is not AI.
+
+It stores:
+
+{
+   "_id":101,
+   "page":5,
+   "text":"Garbage collection improves SSD performance.",
+   "embedding":[0.12,-0.34,...]
+}
+
+MongoDB stores:
+
+original text
+page number
+filename
+metadata
+embedding (optional)
+
+It does not understand the meaning of the text.
+
+It simply stores data.
+
+2. Embedding Model
+
+This is where AI starts.
+
+For example:
+
+Sentence:
+
+SSD firmware validation
+
+becomes
+
+[-0.22,
+ 0.55,
+ 0.98,
+ ...
+ 768 values]
+
+This process is called:
+
+Text
+
+↓
+
+Embedding
+
+↓
+
+Vector
+
+The embedding model understands the meaning of text.
+
+Examples:
+
+all-MiniLM
+BGE
+E5
+
+These are not LLMs.
+
+They are embedding models.
+
+3. FAISS
+
+FAISS is not an AI model.
+
+It is a very fast search engine.
+
+Suppose MongoDB contains
+
+Document A
+
+SSD firmware validation
+
+Vector:
+
+[0.12,
+0.45,
+0.98]
+
+Document B
+
+Python decorators
+
+Vector
+
+[0.80,
+0.22,
+0.11]
+
+Now user asks
+
+How to validate SSD firmware?
+
+Embedding model converts it into
+
+[0.11,
+0.44,
+0.95]
+
+FAISS compares vectors.
+
+Query
+
+↓
+
+Vector
+
+↓
+
+Compare with every vector
+
+↓
+
+Closest vector
+
+↓
+
+Document A
+
+FAISS does nearest-neighbor search.
+
+It does not answer questions.
+
+4. Ollama
+
+This is an LLM.
+
+Examples:
+
+Llama 3
+Mistral
+Gemma
+
+Ollama simply runs these models on your computer.
+
+Without context:
+
+Question
+
+↓
+
+What is TRIM?
+
+The LLM answers using its general knowledge.
+
+With RAG:
+
+Question
+
++
+
+Retrieved PDF
+
+↓
+
+LLM
+
+↓
+
+Answer based on your document
+
+Ollama performs reasoning and generates natural language.
+
+5. Why not let the LLM read the whole PDF?
+
+Suppose your PDF has
+
+1000 pages
+
+The LLM cannot efficiently process the entire document every time.
+
+Instead:
+
+1000 pages
+
+↓
+
+Chunk
+
+↓
+
+FAISS
+
+↓
+
+Top 3 chunks
+
+↓
+
+LLM
+
+The LLM receives only the relevant parts.
+
+This makes it:
+
+faster
+cheaper
+more accurate
+Responsibilities
+Component	Purpose
+PyMuPDF	Read PDF
+Chunker	Split text
+Embedding Model	Convert text → vectors
+MongoDB	Store text & metadata
+FAISS	Find similar vectors
+Ollama	Generate the final answer
+Streamlit	User interface
+Which parts are AI?
+PDF Reader
+
+❌ Not AI
+
+Chunking
+
+❌ Not AI
+
+MongoDB
+
+❌ Database
+
+FAISS
+
+❌ Search library
+
+Embedding Model
+
+✅ AI Model
+
+Ollama
+
+✅ LLM
+
+Think of it like a library
+
+Imagine a huge library.
+
+MongoDB
+
+The bookshelves.
+
+Stores all books.
+
+Embedding Model
+
+A librarian who understands the meaning of books.
+
+Instead of filing books alphabetically, the librarian groups similar topics together.
+
+FAISS
+
+The library catalog.
+
+You ask:
+
+"I need books about SSD firmware."
+
+FAISS instantly finds the most relevant books.
+
+Ollama
+
+The librarian who reads those books and explains the answer to you in plain English.
+
+This is RAG
+                 PDF
+
+                  │
+
+        Extract Text
+
+                  │
+
+          Embedding Model
+
+                  │
+
+        +---------+---------+
+        |                   |
+        ▼                   ▼
+     MongoDB             FAISS
+        |                   |
+        +---------+---------+
+                  │
+           Top matching chunks
+                  │
+                  ▼
+             Ollama (LLM)
+                  │
+                  ▼
+              Final Answer
+
+                 PDF
+                  |
+                  v
+          Text extraction
+                  |
+                  v
+        Embedding Model
+    (all-MiniLM / BGE / E5)
+                  |
+                  v
+             FAISS Search
+                  |
+                  v
+        Relevant PDF chunks
+                  |
+                  v
+        llama3.2:3b  <-- LLM
+                  |
+                  v
+              Answer

@@ -95,7 +95,7 @@ OLLAMA_URL = os.getenv(
 
 LLM_MODEL = os.getenv(
     "LLM_MODEL",
-    "llama3.2:3b"
+    "llama3.1:8b"
 )
 
 
