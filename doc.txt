@@ -1,0 +1,39 @@
+Updated todo list
+
+Here's how your RAG system works end-to-end:
+
+```mermaid
+flowchart TD
+    A[User uploads PDF] --> B[pdf_reader.py\nPyMuPDF extracts text per page]
+    B --> C[chunker.py\nSplit into 500-word overlapping chunks]
+    C --> D[ingest.py\nSentenceTransformer encodes each chunk]
+    D --> E1[MongoDB\nStores chunk text + metadata]
+    D --> E2[FAISS index\nStores float32 vectors on disk]
+
+    F[User asks question] --> G[search.py\nEncode question → float32 vector]
+    G --> H[FAISS\nTop-K nearest vector search]
+    H --> I[MongoDB\nFetch chunk text by vector_id]
+    I --> J[llm.py\nBuild prompt: context + question]
+    J --> K[Ollama llama3.2:3b\nGenerate answer]
+    K --> L[Streamlit UI\nDisplay answer + retrieved chunks]
+```
+
+**Two phases:**
+
+**Ingest** (once per PDF):
+1. PyMuPDF extracts raw text page-by-page
+2. Each page split into 500-word chunks with 50-word overlap
+3. `all-MiniLM-L6-v2` converts each chunk to a 384-dim vector
+4. Chunk text + metadata → **MongoDB** (`rag_db.documents`)
+5. Vectors → **FAISS** index saved to `indexes/faiss.index`
+
+**Query** (every question):
+1. Question encoded to the same 384-dim vector space
+2. FAISS does L2 distance search → returns top-5 `vector_id`s
+3. Those IDs look up the actual text from **MongoDB**
+4. Text chunks assembled as context → sent to **Ollama** with the question
+5. LLM answer displayed in **Streamlit**
+
+The key insight: FAISS handles the fast similarity search, MongoDB stores the readable text — they're linked by `vector_id`.
+
+
