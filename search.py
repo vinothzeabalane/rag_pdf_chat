@@ -16,6 +16,7 @@ from config import (
 )
 
 
+
 # ---------------------------------
 # Load Embedding Model
 # ---------------------------------
@@ -24,24 +25,34 @@ model = SentenceTransformer(
     EMBED_MODEL
 )
 
-_index = None
 
 
-def _load_index():
-    global _index
-    if _index is None:
-        if not os.path.exists(FAISS_INDEX):
-            raise FileNotFoundError(
-                "FAISS index not found. "
-                "Please upload a PDF first."
-            )
-        _index = faiss.read_index(FAISS_INDEX)
-    return _index
+# ---------------------------------
+# Load FAISS Index
+# ---------------------------------
+
+def load_faiss_index():
+
+    """
+    Load existing FAISS index
+    """
+
+    if not os.path.exists(
+        FAISS_INDEX
+    ):
+
+        raise FileNotFoundError(
+            "FAISS index not found. "
+            "Please upload and process a PDF first."
+        )
 
 
-def invalidate_index():
-    global _index
-    _index = None
+    index = faiss.read_index(
+        FAISS_INDEX
+    )
+
+
+    return index
 
 
 
@@ -53,17 +64,37 @@ def search(
         query,
         top_k=TOP_K_RESULTS
 ):
+
     """
-    Search similar PDF chunks.
+    Search relevant document chunks.
 
     Returns:
-        List of matching documents
+
+    [
+        {
+            text,
+            filename,
+            page,
+            chunk_number,
+            score
+        }
+    ]
+
     """
 
 
-    # -----------------------------
-    # Convert question to vector
-    # -----------------------------
+
+    # ---------------------------------
+    # Load FAISS
+    # ---------------------------------
+
+    index = load_faiss_index()
+
+
+
+    # ---------------------------------
+    # Convert question to embedding
+    # ---------------------------------
 
     query_embedding = model.encode(
         query
@@ -71,43 +102,55 @@ def search(
 
 
     query_vector = np.array(
-        [query_embedding]
+        [
+            query_embedding
+        ]
     ).astype(
         "float32"
     )
 
 
-    # -----------------------------
-    # FAISS Search
-    # -----------------------------
 
-    distances, ids = _load_index().search(
+    # ---------------------------------
+    # FAISS similarity search
+    # ---------------------------------
+
+    distances, ids = index.search(
+
         query_vector,
+
         top_k
+
     )
+
 
 
     results = []
 
 
-    # -----------------------------
-    # Retrieve documents from MongoDB
-    # -----------------------------
 
-    for vector_id in ids[0]:
+    # ---------------------------------
+    # Retrieve MongoDB documents
+    # ---------------------------------
+
+    for position, vector_id in enumerate(ids[0]):
 
 
-        # FAISS returns -1 when
-        # no result exists
+        # FAISS returns -1
+        # if no result exists
 
         if vector_id == -1:
 
             continue
 
 
+
         document = get_document_by_id(
+
             int(vector_id)
+
         )
+
 
 
         if document:
@@ -117,41 +160,58 @@ def search(
 
                 {
 
-                    "text":
-                        document["text"],
+                    "vector_id":
+
+                        document[
+                            "vector_id"
+                        ],
+
+
+                    "document_id":
+
+                        document[
+                            "document_id"
+                        ],
 
 
                     "filename":
-                        document.get(
-                            "filename",
-                            ""
-                        ),
+
+                        document[
+                            "filename"
+                        ],
 
 
                     "page":
-                        document.get(
-                            "page",
-                            0
-                        ),
+
+                        document[
+                            "page"
+                        ],
 
 
                     "chunk_number":
-                        document.get(
-                            "chunk_number",
-                            0
-                        ),
+
+                        document[
+                            "chunk_number"
+                        ],
+
+
+                    "text":
+
+                        document[
+                            "text"
+                        ],
 
 
                     "score":
+
                         float(
-                            distances[0][
-                                len(results)
-                            ]
+                            distances[0][position]
                         )
 
                 }
 
             )
+
 
 
     return results

@@ -7,18 +7,18 @@ import os
 # MongoDB Configuration
 # ==============================
 
-MONGO_URL = os.getenv(
-    "MONGO_URL",
+MONGO_URI = os.getenv(
+    "MONGO_URI",
     "mongodb://localhost:27017"
 )
 
-DB_NAME = os.getenv(
-    "DB_NAME",
+MONGO_DB = os.getenv(
+    "MONGO_DB",
     "rag_db"
 )
 
-COLLECTION_NAME = os.getenv(
-    "COLLECTION_NAME",
+MONGO_COLLECTION = os.getenv(
+    "MONGO_COLLECTION",
     "documents"
 )
 

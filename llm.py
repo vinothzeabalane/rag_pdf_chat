@@ -23,7 +23,7 @@ def create_prompt(question, context):
 # Call Ollama LLM
 # ---------------------------------
 
-def ask_llm(question, context):
+def generate_answer(question, context):
     prompt = create_prompt(question, context)
 
     try:

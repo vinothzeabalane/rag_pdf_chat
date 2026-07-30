@@ -1,135 +1,235 @@
 # mongo.py
 
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
+from pymongo import MongoClient, ASCENDING, DESCENDING
 
 from config import (
-    MONGO_URL,
-    DB_NAME,
-    COLLECTION_NAME
+    MONGO_URI,
+    MONGO_DB,
+    MONGO_COLLECTION
 )
 
 
+
 # ---------------------------------
-# Create MongoDB Client
+# MongoDB Connection
+# ---------------------------------
+
+client = MongoClient(
+    MONGO_URI
+)
+
+
+db = client[
+    MONGO_DB
+]
+
+
+collection = db[
+    MONGO_COLLECTION
+]
+
+
+
+# ---------------------------------
+# Test Connection
 # ---------------------------------
 
 try:
 
-    client = MongoClient(
-        MONGO_URL,
-        serverSelectionTimeoutMS=5000
-    )
-
-
-    # Test connection
-
     client.admin.command(
         "ping"
     )
-
 
     print(
         "MongoDB connected successfully"
     )
 
 
-except ConnectionFailure as e:
+except Exception as e:
 
     print(
-        f"MongoDB connection failed: {e}"
+        "MongoDB connection failed:",
+        e
     )
 
-    raise
+    raise e
 
 
 
 # ---------------------------------
-# Database
+# Create MongoDB Indexes
 # ---------------------------------
 
-db = client[
-    DB_NAME
-]
+def create_indexes():
 
-
-# ---------------------------------
-# Collection
-# ---------------------------------
-
-collection = db[
-    COLLECTION_NAME
-]
-
-
-
-# ---------------------------------
-# Insert Documents
-# ---------------------------------
-
-def insert_documents(documents):
     """
-    Insert multiple PDF chunks
-    into MongoDB
+    Create indexes for faster search
     """
 
-    if not documents:
+    # Faster duplicate-PDF lookup (not unique — every chunk of a PDF shares the same hash)
 
-        return None
-
-
-    result = collection.insert_many(
-        documents
+    collection.create_index(
+        [
+            (
+                "file_hash",
+                ASCENDING
+            )
+        ]
     )
 
 
-    return result.inserted_ids
+    # Faster vector lookup
+
+    collection.create_index(
+        [
+            (
+                "vector_id",
+                ASCENDING
+            )
+        ]
+    )
+
+
+    # Faster document lookup
+
+    collection.create_index(
+        [
+            (
+                "document_id",
+                ASCENDING
+            )
+        ]
+    )
+
+
+    print(
+        "MongoDB indexes created"
+    )
+
+
+
+# Create indexes automatically
+
+create_indexes()
 
 
 
 # ---------------------------------
-# Find Document by Vector ID
+# Get document by vector ID
 # ---------------------------------
 
-def get_document_by_id(doc_id):
+def get_document_by_id(
+        vector_id
+):
+
     """
-    Retrieve chunk using FAISS ID
+    Retrieve chunk using FAISS vector ID
     """
 
-    return collection.find_one(
+
+    document = collection.find_one(
+
         {
-            "vector_id": doc_id
+            "vector_id":
+                vector_id
+        }
+
+    )
+
+
+    return document
+
+
+
+# ---------------------------------
+# Check duplicate PDF
+# ---------------------------------
+
+def document_exists(
+        file_hash
+):
+
+    """
+    Check whether PDF already exists
+    """
+
+
+    document = collection.find_one(
+
+        {
+            "file_hash":
+                file_hash
+        }
+
+    )
+
+
+    return document
+
+
+
+# ---------------------------------
+# Get next vector ID
+# ---------------------------------
+
+def get_last_vector_id():
+
+    """
+    Get highest vector ID
+    """
+
+
+    document = collection.find_one(
+
+        sort=[
+            (
+                "vector_id",
+                DESCENDING
+            )
+        ]
+
+    )
+
+
+    if document:
+
+        return document[
+            "vector_id"
+        ]
+
+
+    return 0
+
+
+
+# ---------------------------------
+# Get all documents
+# ---------------------------------
+
+def get_all_documents():
+
+    """
+    Return uploaded PDFs
+    """
+
+
+    documents = collection.find(
+        {},
+        {
+            "_id":0,
+            "embedding":0
         }
     )
 
 
-
-# ---------------------------------
-# Find Documents by Document ID
-# ---------------------------------
-
-def get_documents_by_document_id(
-        document_id
-):
-
-    """
-    Retrieve all chunks
-    belonging to one PDF
-    """
-
     return list(
-        collection.find(
-            {
-                "document_id":
-                    document_id
-            }
-        )
+        documents
     )
 
 
 
 # ---------------------------------
-# Delete PDF Data
+# Delete one document
 # ---------------------------------
 
 def delete_document(
@@ -137,15 +237,17 @@ def delete_document(
 ):
 
     """
-    Delete all chunks
-    of a PDF
+    Delete PDF chunks
     """
 
+
     result = collection.delete_many(
+
         {
             "document_id":
                 document_id
         }
+
     )
 
 
@@ -154,11 +256,19 @@ def delete_document(
 
 
 # ---------------------------------
-# Count Documents
+# Delete all documents
 # ---------------------------------
 
-def count_documents():
+def delete_all_documents():
 
-    return collection.count_documents(
+    """
+    Development use only
+    """
+
+
+    result = collection.delete_many(
         {}
     )
+
+
+    return result.deleted_count

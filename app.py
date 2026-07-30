@@ -4,222 +4,404 @@ import os
 import streamlit as st
 
 from ingest import ingest_pdf
-from search import search, invalidate_index
-from llm import ask_llm
+
+from search import search
+
+from llm import generate_answer
+
+from mongo import get_all_documents
+
+from delete_document import delete_document
 
 
-# -----------------------------
-# Configuration
-# -----------------------------
 
-UPLOAD_DIR = "uploads"
-
-os.makedirs(
-    UPLOAD_DIR,
-    exist_ok=True
-)
-
-
-# -----------------------------
-# Streamlit Page Configuration
-# -----------------------------
+# ---------------------------------
+# Streamlit Configuration
+# ---------------------------------
 
 st.set_page_config(
+
     page_title="PDF RAG Chat",
+
     page_icon="📄",
+
     layout="wide"
+
 )
 
 
-st.title("📄 PDF RAG Chat Assistant")
+
+# ---------------------------------
+# Title
+# ---------------------------------
+
+st.title(
+    "📄 PDF RAG Chat using FAISS + MongoDB + Ollama"
+)
+
+
 
 st.write(
-    "Upload any PDF and ask questions related to its content."
+    """
+Upload a PDF document and ask questions.
+The system will retrieve relevant sections
+using FAISS and generate answers using Ollama.
+"""
 )
 
 
-# -----------------------------
+
+# ---------------------------------
 # Session State
-# -----------------------------
+# ---------------------------------
 
-if "processed" not in st.session_state:
+if "document_id" not in st.session_state:
 
-    st.session_state.processed = False
-
-
-if "document_name" not in st.session_state:
-
-    st.session_state.document_name = ""
+    st.session_state.document_id = None
 
 
-# -----------------------------
-# PDF Upload Section
-# -----------------------------
 
-uploaded_file = st.file_uploader(
-    "Upload PDF file",
-    type=["pdf"]
+# ---------------------------------
+# PDF Upload
+# ---------------------------------
+
+st.sidebar.header(
+    "Upload PDF"
 )
+
+
+uploaded_file = st.sidebar.file_uploader(
+
+    "Choose PDF",
+
+    type=[
+        "pdf"
+    ]
+
+)
+
 
 
 if uploaded_file:
 
 
-    file_path = os.path.join(
-        UPLOAD_DIR,
-        uploaded_file.name
+    upload_dir = "uploads"
+
+
+    os.makedirs(
+
+        upload_dir,
+
+        exist_ok=True
+
     )
+
+
+    pdf_path = os.path.join(
+
+        upload_dir,
+
+        uploaded_file.name
+
+    )
+
 
 
     # Save uploaded PDF
 
-    with open(file_path, "wb") as f:
+    with open(
 
-        f.write(
+        pdf_path,
+
+        "wb"
+
+    ) as file:
+
+
+        file.write(
+
             uploaded_file.getbuffer()
+
         )
 
 
-    st.success(
-        f"Uploaded: {uploaded_file.name}"
-    )
 
-
-    # -----------------------------
-    # Process PDF
-    # -----------------------------
-
-    if st.button(
+    if st.sidebar.button(
         "Process PDF"
     ):
 
 
         with st.spinner(
-            "Extracting text and creating embeddings..."
+            "Processing PDF..."
         ):
 
 
-            document_id = ingest_pdf(
-                file_path
-            )
-
-            invalidate_index()
+            try:
 
 
-            st.session_state.processed = True
+                document_id = ingest_pdf(
 
-            st.session_state.document_name = (
-                uploaded_file.name
-            )
+                    pdf_path
 
-
-            st.session_state.document_id = (
-                document_id
-            )
+                )
 
 
-        st.success(
-            "PDF processed successfully!"
+                st.session_state.document_id = document_id
+
+
+                st.sidebar.success(
+
+                    "PDF processed successfully"
+
+                )
+
+
+            except Exception as e:
+
+
+                st.sidebar.error(
+
+                    str(e)
+
+                )
+
+
+
+# ---------------------------------
+# Manage Documents
+# ---------------------------------
+
+st.sidebar.divider()
+
+st.sidebar.header(
+    "Manage Documents"
+)
+
+
+chunks = get_all_documents()
+
+
+# Deduplicate chunks down to one entry per PDF
+
+uploaded_documents = {
+    chunk["document_id"]: chunk["filename"]
+    for chunk in chunks
+}
+
+
+if not uploaded_documents:
+
+    st.sidebar.info(
+        "No documents uploaded yet"
+    )
+
+else:
+
+    for document_id, filename in uploaded_documents.items():
+
+        col1, col2 = st.sidebar.columns(
+            [3, 1]
         )
 
+        col1.write(
+            filename
+        )
+
+        if col2.button(
+            "🗑️",
+            key=f"delete_{document_id}"
+        ):
+
+            with st.spinner(
+                "Deleting document..."
+            ):
+
+                try:
+
+                    delete_document(
+                        document_id
+                    )
+
+                    if st.session_state.document_id == document_id:
+
+                        st.session_state.document_id = None
+
+                    st.sidebar.success(
+                        f"Deleted: {filename}"
+                    )
+
+                    st.rerun()
+
+                except Exception as e:
+
+                    st.sidebar.error(
+                        str(e)
+                    )
 
 
-# -----------------------------
+
+# ---------------------------------
 # Question Section
-# -----------------------------
+# ---------------------------------
 
 st.divider()
 
 
-if st.session_state.processed:
+
+question = st.text_input(
+
+    "Ask a question about your PDF"
+
+)
 
 
-    st.subheader(
-        f"Ask questions about: {st.session_state.document_name}"
-    )
+
+if st.button(
+    "Ask"
+):
 
 
-    question = st.text_input(
-        "Enter your question"
-    )
+    if not question:
 
 
-    if st.button(
-        "Ask"
-    ):
+        st.warning(
+
+            "Please enter a question"
+
+        )
 
 
-        if question.strip():
+    else:
 
 
-            with st.spinner(
-                "Searching document..."
-            ):
+        with st.spinner(
+
+            "Searching document..."
+
+        ):
 
 
-                # -----------------------------
-                # Vector Search
-                # -----------------------------
+            try:
+
+
+                # -------------------------
+                # FAISS Retrieval
+                # -------------------------
 
                 results = search(
+
                     question,
+
                     top_k=5
+
                 )
 
 
-                context = "\n\n".join(
-                    r["text"] for r in results
-                )
+
+                if not results:
 
 
-                # -----------------------------
-                # LLM Answer
-                # -----------------------------
+                    st.warning(
 
-                answer = ask_llm(
-                    question,
-                    context
-                )
+                        "No relevant information found"
 
-
-            st.subheader(
-                "Answer"
-            )
-
-
-            st.write(
-                answer
-            )
-
-
-            # -----------------------------
-            # Show Retrieved Context
-            # -----------------------------
-
-            with st.expander(
-                "Show retrieved document chunks"
-            ):
-
-                for i, chunk in enumerate(results):
-
-                    st.markdown(
-                        f"**Chunk {i+1}:**"
                     )
+
+
+                else:
+
+
+                    # -------------------------
+                    # Prepare context
+                    # -------------------------
+
+                    context = "\n\n".join(
+
+                        [
+
+                            result["text"]
+
+                            for result in results
+
+                        ]
+
+                    )
+
+
+
+                    # -------------------------
+                    # Generate answer
+                    # -------------------------
+
+                    answer = generate_answer(
+
+                        question,
+
+                        context
+
+                    )
+
+
+
+                    st.subheader(
+
+                        "Answer"
+
+                    )
+
 
                     st.write(
-                        chunk
+
+                        answer
+
                     )
 
 
-        else:
 
-            st.warning(
-                "Please enter a question."
-            )
+                    # -------------------------
+                    # Show sources
+                    # -------------------------
+
+                    st.subheader(
+
+                        "Sources"
+
+                    )
 
 
-else:
 
-    st.info(
-        "Please upload and process a PDF first."
-    )
+                    for result in results:
+
+
+                        with st.expander(
+
+                            f"{result['filename']} - Page {result['page']}"
+
+                        ):
+
+
+                            st.write(
+
+                                result["text"]
+
+                            )
+
+
+                            st.write(
+
+                                "Score:",
+
+                                result["score"]
+
+                            )
+
+
+
+            except Exception as e:
+
+
+                st.error(
+
+                    str(e)
+
+                )
