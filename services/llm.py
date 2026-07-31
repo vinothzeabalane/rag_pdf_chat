@@ -23,7 +23,7 @@ def create_prompt(question, context):
     )
 
     return (
-        "You are a helpful assistant.\n"
+        "You are a technical assistant specializing in SSD firmware, NVMe, Python, Linux, and DevOps.\n"
         "Answer the question only using the provided context.\n"
         "If the answer is not in the context, say: "
         "'I could not find the answer in the provided document.'\n\n"
