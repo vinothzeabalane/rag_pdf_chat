@@ -6,7 +6,7 @@ import time
 import faiss
 import numpy as np
 
-from mongo import collection
+from database.mongo import collection
 
 from config import FAISS_INDEX
 

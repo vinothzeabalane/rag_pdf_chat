@@ -4,15 +4,17 @@ import os
 import time
 import streamlit as st
 
-from ingest import ingest_pdf
+from services.ingest import ingest_pdf
 
-from search import search
+from services.search import search
 
-from llm import generate_answer
+from services.llm import generate_answer
 
-from mongo import get_all_documents
+from database.mongo import get_all_documents
 
-from delete_document import delete_document
+from services.delete import delete_document
+
+from config import UPLOAD_DIR
 
 from logging_utils import (
     configure_logger,
@@ -121,7 +123,7 @@ if uploaded_file:
     )
 
 
-    upload_dir = "uploads"
+    upload_dir = UPLOAD_DIR
 
 
     os.makedirs(

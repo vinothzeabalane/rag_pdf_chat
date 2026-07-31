@@ -6,12 +6,11 @@ import time
 import faiss
 import numpy as np
 
-from sentence_transformers import SentenceTransformer
+from database.mongo import get_document_by_id
 
-from mongo import get_document_by_id
+from models.embedding import get_embedding_model
 
 from config import (
-    EMBED_MODEL,
     FAISS_INDEX,
     TOP_K_RESULTS
 )
@@ -26,9 +25,7 @@ logger = configure_logger(__name__)
 # Load Embedding Model
 # ---------------------------------
 
-model = SentenceTransformer(
-    EMBED_MODEL
-)
+model = get_embedding_model()
 
 
 # ---------------------------------

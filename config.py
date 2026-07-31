@@ -40,7 +40,9 @@ EMBED_MODEL = os.getenv(
 # FAISS Configuration
 # ==============================
 
-FAISS_INDEX_DIR = "indexes"
+STORAGE_DIR = "storage"
+
+FAISS_INDEX_DIR = STORAGE_DIR
 
 FAISS_INDEX = os.path.join(
     FAISS_INDEX_DIR,
@@ -52,7 +54,10 @@ FAISS_INDEX = os.path.join(
 # PDF Upload Configuration
 # ==============================
 
-UPLOAD_DIR = "uploads"
+UPLOAD_DIR = os.path.join(
+    STORAGE_DIR,
+    "uploads"
+)
 
 
 # ==============================

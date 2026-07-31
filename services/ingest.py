@@ -8,16 +8,15 @@ import time
 import numpy as np
 import faiss
 
-from sentence_transformers import SentenceTransformer
-
-from mongo import collection
+from database.mongo import collection
 
 from pdf_reader import extract_pdf
 
 from chunker import chunk_text
 
+from models.embedding import get_embedding_model
+
 from config import (
-    EMBED_MODEL,
     FAISS_INDEX,
     FAISS_INDEX_DIR,
     CHUNK_SIZE
@@ -33,9 +32,7 @@ logger = configure_logger(__name__)
 # Load embedding model
 # ---------------------------------
 
-model = SentenceTransformer(
-    EMBED_MODEL
-)
+model = get_embedding_model()
 
 
 # ---------------------------------
