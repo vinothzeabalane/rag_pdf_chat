@@ -1,6 +1,7 @@
 # app.py
 
 import os
+import time
 import streamlit as st
 
 from ingest import ingest_pdf
@@ -12,6 +13,18 @@ from llm import generate_answer
 from mongo import get_all_documents
 
 from delete_document import delete_document
+
+from logging_utils import (
+    configure_logger,
+    start_request_id,
+    clear_request_id,
+    get_request_id,
+    set_debug_enabled,
+    is_debug_enabled
+)
+
+
+logger = configure_logger(__name__)
 
 
 
@@ -66,6 +79,23 @@ if "document_id" not in st.session_state:
 # ---------------------------------
 
 st.sidebar.header(
+    "Logging"
+)
+
+debug_enabled = st.sidebar.checkbox(
+    "Enable debug logs",
+    value=is_debug_enabled(),
+    help="Enable verbose backend logs for troubleshooting."
+)
+
+set_debug_enabled(debug_enabled)
+
+logger.info(
+    "logging:mode debug_enabled=%s",
+    debug_enabled
+)
+
+st.sidebar.header(
     "Upload PDF"
 )
 
@@ -83,6 +113,12 @@ uploaded_file = st.sidebar.file_uploader(
 
 
 if uploaded_file:
+
+    logger.debug(
+        "upload:selected filename=%s size_bytes=%s",
+        uploaded_file.name,
+        uploaded_file.size
+    )
 
 
     upload_dir = "uploads"
@@ -124,11 +160,25 @@ if uploaded_file:
 
         )
 
+    logger.debug(
+        "upload:saved path=%s",
+        pdf_path
+    )
+
 
 
     if st.sidebar.button(
         "Process PDF"
     ):
+
+        process_start = time.perf_counter()
+        request_id = start_request_id("process")
+
+        logger.info(
+            "process:start request_id=%s filename=%s",
+            request_id,
+            uploaded_file.name
+        )
 
 
         with st.spinner(
@@ -140,13 +190,18 @@ if uploaded_file:
 
 
                 document_id = ingest_pdf(
-
-                    pdf_path
-
+                    pdf_path,
+                    request_id=request_id
                 )
 
 
                 st.session_state.document_id = document_id
+
+                logger.info(
+                    "process:done document_id=%s elapsed=%.3fs",
+                    document_id,
+                    time.perf_counter() - process_start
+                )
 
 
                 st.sidebar.success(
@@ -158,12 +213,22 @@ if uploaded_file:
 
             except Exception as e:
 
+                logger.exception(
+                    "process:error request_id=%s filename=%s error=%s",
+                    get_request_id(),
+                    uploaded_file.name,
+                    str(e)
+                )
+
 
                 st.sidebar.error(
 
                     str(e)
 
                 )
+
+            finally:
+                clear_request_id()
 
 
 
@@ -179,6 +244,11 @@ st.sidebar.header(
 
 
 chunks = get_all_documents()
+
+logger.debug(
+    "documents:loaded chunk_records=%s",
+    len(chunks)
+)
 
 
 # Deduplicate chunks down to one entry per PDF
@@ -212,6 +282,15 @@ else:
             key=f"delete_{document_id}"
         ):
 
+            request_id = start_request_id("delete")
+
+            logger.info(
+                "delete:start request_id=%s document_id=%s filename=%s",
+                request_id,
+                document_id,
+                filename
+            )
+
             with st.spinner(
                 "Deleting document..."
             ):
@@ -219,7 +298,8 @@ else:
                 try:
 
                     delete_document(
-                        document_id
+                        document_id,
+                        request_id=request_id
                     )
 
                     if st.session_state.document_id == document_id:
@@ -230,13 +310,28 @@ else:
                         f"Deleted: {filename}"
                     )
 
+                    logger.info(
+                        "delete:done document_id=%s",
+                        document_id
+                    )
+
                     st.rerun()
 
                 except Exception as e:
 
+                    logger.exception(
+                        "delete:error request_id=%s document_id=%s error=%s",
+                        get_request_id(),
+                        document_id,
+                        str(e)
+                    )
+
                     st.sidebar.error(
                         str(e)
                     )
+
+                finally:
+                    clear_request_id()
 
 
 
@@ -273,6 +368,14 @@ if st.button(
 
     else:
 
+        request_id = start_request_id("ask")
+
+        logger.info(
+            "ask:start request_id=%s question_chars=%s",
+            request_id,
+            len(question)
+        )
+
 
         with st.spinner(
 
@@ -292,13 +395,26 @@ if st.button(
 
                     question,
 
-                    top_k=5
+                    top_k=5,
+                    request_id=request_id
 
+                )
+
+                logger.info(
+                    "ask:retrieval request_id=%s results=%s",
+                    get_request_id(),
+                    len(results)
                 )
 
 
 
                 if not results:
+
+                    logger.warning(
+                        "ask:no-results request_id=%s question_chars=%s",
+                        get_request_id(),
+                        len(question)
+                    )
 
 
                     st.warning(
@@ -327,6 +443,12 @@ if st.button(
 
                     )
 
+                    logger.debug(
+                        "ask:context-built request_id=%s chars=%s",
+                        get_request_id(),
+                        len(context)
+                    )
+
 
 
                     # -------------------------
@@ -337,8 +459,16 @@ if st.button(
 
                         question,
 
-                        context
+                        context,
 
+                        request_id=request_id
+
+                    )
+
+                    logger.info(
+                        "ask:answer-generated request_id=%s chars=%s",
+                        get_request_id(),
+                        len(answer)
                     )
 
 
@@ -356,52 +486,40 @@ if st.button(
 
                     )
 
-
-
                     # -------------------------
                     # Show sources
                     # -------------------------
 
                     st.subheader(
-
                         "Sources"
-
                     )
-
-
 
                     for result in results:
 
-
                         with st.expander(
-
                             f"{result['filename']} - Page {result['page']}"
-
                         ):
 
-
                             st.write(
-
                                 result["text"]
-
                             )
-
 
                             st.write(
-
                                 "Score:",
-
                                 result["score"]
-
                             )
-
-
 
             except Exception as e:
 
+                logger.exception(
+                    "ask:error request_id=%s error=%s",
+                    get_request_id(),
+                    str(e)
+                )
 
                 st.error(
-
                     str(e)
-
                 )
+
+            finally:
+                clear_request_id()

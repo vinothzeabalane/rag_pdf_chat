@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #1a202c; margin: 0; padding: 20px; }
+  .mermaid { background: #1a202c; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+<pre class="mermaid">
+flowchart TD
+    subgraph Upload["Upload and Ingest"]
+        A[User uploads PDF via Streamlit sidebar] --> B[Save to uploads folder]
+        B --> C[ingest_pdf pdf_path]
+        C --> D[calculate_file_hash - SHA256]
+        D --> E{file_hash exists in MongoDB?}
+        E -->|Yes| F[Skip processing - return existing document_id]
+        E -->|No| G[extract_pdf to pages]
+        G --> H[chunk_text per page - CHUNK_SIZE=500 overlap=50]
+        H --> I[SentenceTransformer.encode - all-MiniLM-L6-v2]
+        I --> J[get_next_vector_id - global incrementing counter]
+        J --> K[Build mongo_documents: vector_id, document_id, file_hash, filename, page, chunk_number, text, embedding]
+        K --> L[(MongoDB rag_db.documents - insert_many)]
+        K --> M[load_faiss_index - load existing or create IndexIDMap]
+        M --> N[index.add_with_ids - append new vectors]
+        N --> O[(indexes/faiss.index - write_index)]
+    end
+
+    subgraph Ask["Ask a Question"]
+        P[User types question] --> Q[search question top_k=5]
+        Q --> R[model.encode question]
+        R --> S[FAISS index.search - load_faiss_index fresh each call]
+        S --> T[get vector_ids and distances]
+        T --> U[get_document_by_id per vector_id - MongoDB lookup]
+        U --> V[Build results: text, filename, page, chunk_number, score]
+        V --> W[Join chunk texts to build context]
+        W --> X[generate_answer question, context - llm.py]
+        X --> Y[ollama.chat model=llama3.1:8b]
+        Y --> Z[Display Answer in Streamlit]
+    end
+
+    subgraph Manage["Manage Documents"]
+        AA[Sidebar: get_all_documents - mongo.py] --> AB[Dedup chunks to unique document_id + filename list]
+        AB --> AC[User clicks delete for a PDF]
+        AC --> AD[delete_document document_id - delete_document.py]
+        AD --> AE[Find vector_ids for document_id in MongoDB]
+        AE --> AF[FAISS index.remove_ids]
+        AF --> AG[write_index - save FAISS]
+        AG --> AH[MongoDB collection.delete_many - document_id match]
+        AH --> AI[st.rerun - refresh sidebar list]
+    end
+
+    L -.shared collection.-> AA
+    O -.shared index file.-> S
+
+    classDef store fill:#2d3748,stroke:#63b3ed,color:#fff
+    class L,O store
+</pre>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+</script>
+</body>
+</html>

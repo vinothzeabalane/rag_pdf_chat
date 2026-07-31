@@ -8,6 +8,11 @@ from config import (
     MONGO_COLLECTION
 )
 
+from logging_utils import configure_logger
+
+
+logger = configure_logger(__name__)
+
 
 
 # ---------------------------------
@@ -40,16 +45,19 @@ try:
         "ping"
     )
 
-    print(
-        "MongoDB connected successfully"
+    logger.info(
+        "mongo:connected uri=%s db=%s collection=%s",
+        MONGO_URI,
+        MONGO_DB,
+        MONGO_COLLECTION
     )
 
 
 except Exception as e:
 
-    print(
-        "MongoDB connection failed:",
-        e
+    logger.exception(
+        "mongo:connection-failed error=%s",
+        str(e)
     )
 
     raise e
@@ -102,8 +110,8 @@ def create_indexes():
     )
 
 
-    print(
-        "MongoDB indexes created"
+    logger.info(
+        "mongo:indexes-created fields=file_hash,vector_id,document_id"
     )
 
 

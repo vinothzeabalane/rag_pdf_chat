@@ -1,8 +1,14 @@
 # llm.py
 
 import ollama
+import time
 
 from config import LLM_MODEL
+
+from logging_utils import configure_logger, set_request_id, get_request_id
+
+
+logger = configure_logger(__name__)
 
 
 # ---------------------------------
@@ -10,6 +16,12 @@ from config import LLM_MODEL
 # ---------------------------------
 
 def create_prompt(question, context):
+    logger.debug(
+        "llm:create-prompt question_chars=%s context_chars=%s",
+        len(question),
+        len(context)
+    )
+
     return (
         "You are a helpful assistant.\n"
         "Answer the question only using the provided context.\n"
@@ -23,7 +35,20 @@ def create_prompt(question, context):
 # Call Ollama LLM
 # ---------------------------------
 
-def generate_answer(question, context):
+def generate_answer(question, context, request_id=None):
+    start_time = time.perf_counter()
+
+    if request_id:
+        set_request_id(request_id)
+
+    logger.info(
+        "llm:start request_id=%s model=%s question_chars=%s context_chars=%s",
+        get_request_id(),
+        LLM_MODEL,
+        len(question),
+        len(context)
+    )
+
     prompt = create_prompt(question, context)
 
     try:
@@ -31,7 +56,22 @@ def generate_answer(question, context):
             model=LLM_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response["message"]["content"]
+
+        content = response["message"]["content"]
+
+        logger.info(
+            "llm:done answer_chars=%s elapsed=%.3fs",
+            len(content),
+            time.perf_counter() - start_time
+        )
+
+        return content
 
     except Exception as e:
+        logger.exception(
+            "llm:error model=%s error=%s",
+            LLM_MODEL,
+            str(e)
+        )
+
         return f"LLM connection error: {str(e)}"

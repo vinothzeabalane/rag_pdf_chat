@@ -3,6 +3,7 @@
 import os
 import uuid
 import hashlib
+import time
 
 import numpy as np
 import faiss
@@ -21,6 +22,11 @@ from config import (
     FAISS_INDEX_DIR,
     CHUNK_SIZE
 )
+
+from logging_utils import configure_logger, set_request_id, get_request_id
+
+
+logger = configure_logger(__name__)
 
 
 # ---------------------------------
@@ -111,8 +117,9 @@ def load_faiss_index(
         FAISS_INDEX
     ):
 
-        print(
-            "Loading existing FAISS index"
+        logger.debug(
+            "load_faiss_index: loading existing index from %s",
+            FAISS_INDEX
         )
 
 
@@ -130,8 +137,9 @@ def load_faiss_index(
             )
 
 
-        print(
-            "Creating new FAISS index"
+        logger.debug(
+            "load_faiss_index: creating new index with dimension=%s",
+            dimension
         )
 
 
@@ -151,7 +159,8 @@ def load_faiss_index(
 # ---------------------------------
 
 def ingest_pdf(
-        pdf_path
+    pdf_path,
+    request_id=None
 ):
 
     """
@@ -169,6 +178,26 @@ def ingest_pdf(
 
     """
 
+    start_time = time.perf_counter()
+
+    if request_id:
+        set_request_id(request_id)
+
+    logger.info(
+        "ingest_pdf:start request_id=%s path=%s",
+        get_request_id(),
+        pdf_path
+    )
+
+    if not os.path.exists(pdf_path):
+        logger.error(
+            "ingest_pdf:file-not-found path=%s",
+            pdf_path
+        )
+        raise FileNotFoundError(
+            f"File not found: {pdf_path}"
+        )
+
 
 
     # ---------------------------------
@@ -177,6 +206,11 @@ def ingest_pdf(
 
     file_hash = calculate_file_hash(
         pdf_path
+    )
+
+    logger.debug(
+        "ingest_pdf:file-hash calculated hash=%s",
+        file_hash
     )
 
 
@@ -189,9 +223,15 @@ def ingest_pdf(
 
     if existing:
 
+        logger.info(
+            "ingest_pdf:duplicate document_id=%s filename=%s",
+            existing.get("document_id"),
+            existing.get("filename")
+        )
 
-        print(
-            "Document already exists"
+        logger.info(
+            "ingest_pdf:done duplicate-skip elapsed=%.3fs",
+            time.perf_counter() - start_time
         )
 
 
@@ -209,9 +249,9 @@ def ingest_pdf(
         uuid.uuid4()
     )
 
-
-    print(
-        f"New document: {document_id}"
+    logger.info(
+        "ingest_pdf:new-document document_id=%s",
+        document_id
     )
 
 
@@ -224,8 +264,18 @@ def ingest_pdf(
         pdf_path
     )
 
+    logger.debug(
+        "ingest_pdf:extract-pdf pages=%s",
+        len(pages) if pages else 0
+    )
+
 
     if not pages:
+
+        logger.error(
+            "ingest_pdf:empty-pdf path=%s",
+            pdf_path
+        )
 
         raise Exception(
             "PDF contains no text"
@@ -242,6 +292,14 @@ def ingest_pdf(
 
 
     next_vector_id = get_next_vector_id()
+
+    logger.debug(
+        "ingest_pdf:vector-id-start next_vector_id=%s",
+        next_vector_id
+    )
+
+    processed_pages = 0
+    total_chunks = 0
 
 
 
@@ -262,6 +320,14 @@ def ingest_pdf(
             text,
             CHUNK_SIZE
         )
+
+        logger.debug(
+            "ingest_pdf:page-chunked page=%s chunks=%s",
+            page_number,
+            len(chunks)
+        )
+
+        processed_pages += 1
 
 
 
@@ -343,9 +409,17 @@ def ingest_pdf(
 
             next_vector_id += 1
 
+            total_chunks += 1
+
 
 
     if not vectors:
+
+        logger.error(
+            "ingest_pdf:no-chunks-generated document_id=%s pages=%s",
+            document_id,
+            processed_pages
+        )
 
         raise Exception(
             "No chunks generated"
@@ -361,9 +435,10 @@ def ingest_pdf(
         mongo_documents
     )
 
-
-    print(
-        f"Inserted {len(mongo_documents)} chunks"
+    logger.info(
+        "ingest_pdf:mongo-inserted document_id=%s records=%s",
+        document_id,
+        len(mongo_documents)
     )
 
 
@@ -399,6 +474,13 @@ def ingest_pdf(
 
     )
 
+    logger.info(
+        "ingest_pdf:faiss-add document_id=%s vectors=%s dimension=%s",
+        document_id,
+        len(vector_ids),
+        dimension
+    )
+
 
 
     # ---------------------------------
@@ -410,9 +492,17 @@ def ingest_pdf(
         FAISS_INDEX
     )
 
+    logger.info(
+        "ingest_pdf:faiss-saved path=%s",
+        FAISS_INDEX
+    )
 
-    print(
-        "FAISS index updated"
+    logger.info(
+        "ingest_pdf:done document_id=%s pages=%s chunks=%s elapsed=%.3fs",
+        document_id,
+        processed_pages,
+        total_chunks,
+        time.perf_counter() - start_time
     )
 
 
